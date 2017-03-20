@@ -30,6 +30,8 @@ class BaseModel(learn.Estimator):
     def __init__(self, params):
         self.params = params
 
+        tf.logging.set_verbosity(tf.logging.INFO)
+
     def preprocess_fit_transform(self, training_token_path, training_label_path):
 
         def tokenizer(iterator):
@@ -37,7 +39,6 @@ class BaseModel(learn.Estimator):
                 yield value 
 
         tokens = read_csv(training_token_path)
-
         self.token_vocab = learn.preprocessing.VocabularyProcessor(
                 max_document_length=self.params[PARAM_KEY_MAX_DOCUMENT_LEN],
                 tokenizer_fn=tokenizer)
@@ -46,13 +47,20 @@ class BaseModel(learn.Estimator):
         self.params[PARAM_KEY_TOKEN_VOCAB_SIZE] = len(self.token_vocab.vocabulary_)
 
         labels = read_csv(training_label_path)
-
         self.label_vocab = learn.preprocessing.VocabularyProcessor(
                 max_document_length=self.params[PARAM_KEY_MAX_DOCUMENT_LEN],
                 tokenizer_fn=tokenizer)
         self.label_vocab.fit(labels)
         self.label_ids = self.preprocess_label_transform(labels)
         self.params[PARAM_KEY_LABEL_VOCAB_SIZE] = len(self.label_vocab.vocabulary_)
+
+        model_dir = self.params[PARAM_KEY_MODEL_DIR]
+
+        token_vocab_path = os.path.join(model_dir, FILENAME_TOKEN_VOCAB)
+        save(self.token_vocab, token_vocab_path)
+
+        label_vocab_path = os.path.join(model_dir, FILENAME_LABEL_VOCAB)
+        save(self.label_vocab, label_vocab_path)
 
     def preprocess_token_transform(self, tokens):
         token_ids = self.token_vocab.transform(tokens)
@@ -62,8 +70,7 @@ class BaseModel(learn.Estimator):
         label_ids = self.label_vocab.transform(labels)
         return np.array(list(label_ids))
 
-    def build_model(self, model_dir):
-        self.params[PARAM_KEY_MODEL_DIR] = model_dir
+    def build_model(self):
 
         TOKEN_VOCAB_SIZE = self.params[PARAM_KEY_TOKEN_VOCAB_SIZE]
         LABEL_VOCAB_SIZE = self.params[PARAM_KEY_LABEL_VOCAB_SIZE]
@@ -102,23 +109,16 @@ class BaseModel(learn.Estimator):
                 'prob': tf.nn.softmax(logits)
             }, loss, train_op)
         
-        self.model = learn.Estimator(model_fn=model_fn, model_dir=model_dir)
+        self.model = learn.Estimator(model_fn=model_fn, model_dir=self.params[PARAM_KEY_MODEL_DIR])
 
-    def fit(self, steps):
+    def fit(self, steps, batch_size=None):
         def input_fn():
             return tf.placeholder_with_default(self.token_ids, name=TENSOR_NAME_TOKENS, shape=[None, self.params[PARAM_KEY_MAX_DOCUMENT_LEN]]), \
                    tf.placeholder_with_default(self.label_ids, shape=[None, self.params[PARAM_KEY_MAX_DOCUMENT_LEN]])
-        self.model.fit(input_fn=input_fn, steps=steps)
+        self.model.fit(input_fn=input_fn, steps=steps, batch_size=batch_size)
 
     def frozen_save(self):
         model_dir = self.params[PARAM_KEY_MODEL_DIR]
-
-        token_vocab_path = os.path.join(model_dir, FILENAME_TOKEN_VOCAB)
-        save(self.token_vocab, token_vocab_path)
-
-        label_vocab_path = os.path.join(model_dir, FILENAME_LABEL_VOCAB)
-        save(self.label_vocab, label_vocab_path)
-
         freeze_graph(model_dir)
 
     def predict(self, tokens):
