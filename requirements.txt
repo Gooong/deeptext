@@ -5,4 +5,5 @@ nose
 coverage
 pypi-publisher
 
-tensorflow==1.0.1
+tensorflow==1.0.0
+dill==0.2.6

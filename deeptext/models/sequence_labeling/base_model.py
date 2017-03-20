@@ -123,9 +123,13 @@ class BaseModel(learn.Estimator):
 
     def predict(self, tokens):
         tokens_transform = self.preprocess_token_transform(tokens)
-        labels = self.sess.run(self.labels_tensor, feed_dict={
+        labels_transform = self.sess.run(self.labels_tensor, feed_dict={
             self.tokens_tensor: tokens_transform
             })
+
+        labels = []
+        for item in self.label_vocab.reverse([labels_transform]):
+            labels.append(item)
         return labels
 
     @classmethod
