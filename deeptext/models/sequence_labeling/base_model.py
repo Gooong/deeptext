@@ -115,7 +115,8 @@ class BaseModel(object):
                 tf.reshape(target, [-1, LABEL_VOCAB_SIZE]),
                 weights=weights)
         self.tensor_loss = tf.identity(loss, name=TENSOR_NAME_LOSS)
-        tf.summary.scalar("loss", self.tensor_loss)
+        self.summ_training_loss = tf.summary.scalar("training_loss", self.tensor_loss)
+        self.summ_validation_loss = tf.summary.scalar("validation_loss", self.tensor_loss)
         
         # Create a training op.
         self.tensor_optimizer = tf.contrib.layers.optimize_loss(
@@ -153,13 +154,13 @@ class BaseModel(object):
                 sess.run(self.tensor_optimizer, feed_dict={self.tensor_tokens: curr_token_ids, self.tensor_labels: curr_label_ids})
 
                 if (i + 1) % 100 == 0:
-                    c, s = sess.run([self.tensor_loss, self.summ], feed_dict={self.tensor_tokens: curr_token_ids, self.tensor_labels: curr_label_ids})
+                    c, s = sess.run([self.tensor_loss, self.summ_training_loss], feed_dict={self.tensor_tokens: curr_token_ids, self.tensor_labels: curr_label_ids})
                     writer.add_summary(s, i + 1)
                     logging.info("step: %d, training loss: %.2f", i + 1, c)
                     
                     if validation_data_path is not None:
-                        c, s = sess.run([self.tensor_loss, self.summ], feed_dict={self.tensor_tokens: validation_token_ids, self.tensor_labels: validation_label_ids})
-                        writer.add_summary(s, steps + i + 1)
+                        c, s = sess.run([self.tensor_loss, self.summ_validation_loss], feed_dict={self.tensor_tokens: validation_token_ids, self.tensor_labels: validation_label_ids})
+                        writer.add_summary(s, i + 1)
                         logging.info("step: %d, validation loss: %.2f", i + 1, c)
 
     def frozen_save(self):
