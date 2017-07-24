@@ -192,20 +192,29 @@ class BaseModel(object):
             entropy_list.append(max_entropy)
         return entropy_list
 
-    def evaluate(self, testing_token_path, testing_label_path):
-        tokens = read_csv(testing_token_path)
-        labels = read_csv(testing_label_path)
+    def evaluate(self, testing_data_path):
+        tokens, labels = read_data(testing_data_path)
 
         predicted_labels = self.predict(tokens)
 
-        corre_cnt = 0
-        total_cnt = 0
+        label_corre_cnt = 0
+        label_total_cnt = 0
+        sentence_corre_cnt = 0
+        sentence_total_cnt = len(labels)
         for i in xrange(len(labels)):
-            total_cnt += len(labels[i])
+            label_total_cnt += len(labels[i])
+
+            sentencen_corre = True
             for j in xrange(min(len(labels[i]), len(predicted_labels[i]))):
                 if labels[i][j] == predicted_labels[i][j]:
-                    corre_cnt += 1
-        logging.info("label accuracy: %.2f", 1.0 * corre_cnt / total_cnt)
+                    label_corre_cnt += 1
+                else:
+                    sentencen_corre = False
+            if sentencen_corre:
+                sentence_corre_cnt += 1
+
+        logging.info("total label count: %d, label accuracy: %.2f", label_total_cnt, 1.0 * label_corre_cnt / label_total_cnt)
+        logging.info("total sentence count: %d, sentence accuracy: %.2f", sentence_total_cnt, 1.0 * sentence_corre_cnt / sentence_total_cnt)
 
     @classmethod
     def restore(cls, model_dir):
