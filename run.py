@@ -1,31 +1,33 @@
 #-*- coding:utf-8 -*-
 
+import logging
+import time
+
+FORMAT = '[%(asctime)-15s] %(message)s'
+logging.basicConfig(level=logging.DEBUG, format=FORMAT)
+
 from deeptext.models.sequence_labeling.base_model import BaseModel as SequenceLabeling
 
 params = {}
 params["max_document_len"] = 25
 params["embedding_size"] = 50
 params["dropout_prob"] = 0.5
-params["model_dir"] = '/Users/yy/data/kcws/20170510/models'
+params["model_dir"] = 'data/music/model'
 
 model = SequenceLabeling(params)
-model.preprocess_fit_transform(
-        training_data_path='/Users/yy/data/kcws/20170510/seg.data.head.1000'
+model.preprocess(
+        training_data_path='data/music/music_data.txt'
         )
 
-model.build_model()
 model.fit(
-        steps=100)
-model.frozen_save()
+        steps=1000, 
+        validation_data_path='data/music/music_data_validation.txt'
+        )
+#model.frozen_save()
 
 #model = SequenceLabeling.restore(model_dir='/data/ruyi/ruyi-ml/data/sentence_trunk_service/model')
 #
-#import logging
-#import time
-#
-#FORMAT = '[%(asctime)-15s] %(message)s'
-#logging.basicConfig(level=logging.DEBUG, format=FORMAT)
-#
+
 #start = time.time()
 #
 #model.evaluate(

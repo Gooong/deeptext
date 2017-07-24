@@ -36,14 +36,15 @@ TENSOR_NAME_DEBUG3      = "deeptext/models/sequence_labeling/debug3"
 TENSOR_NAME_DEBUG4      = "deeptext/models/sequence_labeling/debug4"
 TENSOR_NAME_DEBUG5      = "deeptext/models/sequence_labeling/debug5"
 
-class BaseModel(learn.Estimator):
+class BaseModel(object):
 
     def __init__(self, params):
         self.params = params
 
         tf.logging.set_verbosity(tf.logging.INFO)
 
-    def preprocess_fit_transform(self, training_data_path):
+
+    def preprocess(self, training_data_path):
 
         def tokenizer(iterator):
             for value in iterator:
@@ -73,6 +74,11 @@ class BaseModel(learn.Estimator):
         label_vocab_path = os.path.join(model_dir, FILENAME_LABEL_VOCAB)
         save(self.label_vocab, label_vocab_path)
 
+        self.tensor_tokens = tf.placeholder_with_default(self.token_ids, name=TENSOR_NAME_TOKENS, shape=[None, self.params[PARAM_KEY_MAX_DOCUMENT_LEN]])
+        self.tensor_labels = tf.placeholder_with_default(self.label_ids, name=TENSOR_NAME_LABELS, shape=[None, self.params[PARAM_KEY_MAX_DOCUMENT_LEN]])
+
+        self.build_model(self.tensor_tokens, self.tensor_labels)
+
     def preprocess_token_transform(self, tokens):
         token_ids = self.token_vocab.transform(tokens)
         return np.array(list(token_ids))
@@ -81,7 +87,7 @@ class BaseModel(learn.Estimator):
         label_ids = self.label_vocab.transform(labels)
         return np.array(list(label_ids))
 
-    def build_model(self):
+    def build_model(self, x, y):
 
         TOKEN_VOCAB_SIZE = self.params[PARAM_KEY_TOKEN_VOCAB_SIZE]
         LABEL_VOCAB_SIZE = self.params[PARAM_KEY_LABEL_VOCAB_SIZE]
@@ -89,69 +95,72 @@ class BaseModel(learn.Estimator):
         EMBEDDING_SIZE = self.params[PARAM_KEY_EMBEDDING_SIZE]
         DROPOUT_PROB = self.params[PARAM_KEY_DROPOUT_PROB]
 
-        def model_fn(x, y):
-       
-            word_vectors = tf.contrib.layers.embed_sequence(
-                x, vocab_size=TOKEN_VOCAB_SIZE, embed_dim=EMBEDDING_SIZE, scope='words')
-            
-            cell = tf.contrib.rnn.LSTMCell(EMBEDDING_SIZE)
-            cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=DROPOUT_PROB)
-            
-            output, _ = tf.nn.dynamic_rnn(cell, word_vectors, dtype=tf.float32)
-            output = tf.reshape(output, [-1, EMBEDDING_SIZE])
-            logits = tf.contrib.layers.fully_connected(output, LABEL_VOCAB_SIZE)
-            logits = tf.reshape(logits, [-1, MAX_DOCUMENT_LEN, LABEL_VOCAB_SIZE], name=TENSOR_NAME_LOGITS)
-
-            loss = None
-            train_op = None
-            if y is not None:
-                zeros_with_shape = tf.zeros_like(y, dtype=tf.int64)
-                weights = tf.to_double(tf.reshape(tf.not_equal(zeros_with_shape, y), [-1]))
-
-                target = tf.one_hot(y, LABEL_VOCAB_SIZE, 1, 0)
-                loss = tf.contrib.losses.softmax_cross_entropy(
-                        tf.reshape(logits, [-1, LABEL_VOCAB_SIZE]),
-                        tf.reshape(target, [-1, LABEL_VOCAB_SIZE]),
-                        weights=weights)
-                named_loss = tf.identity(loss, name=TENSOR_NAME_LOSS)
-                
-                # Create a training op.
-                train_op = tf.contrib.layers.optimize_loss(
-                    loss,
-                    tf.contrib.framework.get_global_step(),
-                    optimizer='Adam',
-                    learning_rate=0.01)
-            
-            return ({
-                'class': tf.argmax(logits, 2, name=TENSOR_NAME_PREDICTION),
-                'prob': tf.nn.softmax(logits)
-            }, named_loss, train_op)
+        word_vectors = tf.contrib.layers.embed_sequence(
+            x, vocab_size=TOKEN_VOCAB_SIZE, embed_dim=EMBEDDING_SIZE, scope='words')
         
-        self.model = learn.Estimator(
-                model_fn=model_fn, 
-                model_dir=self.params[PARAM_KEY_MODEL_DIR], 
-                config=tf.contrib.learn.RunConfig(save_checkpoints_secs=60))
+        cell = tf.contrib.rnn.LSTMCell(EMBEDDING_SIZE)
+        cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=DROPOUT_PROB)
+        
+        output, _ = tf.nn.dynamic_rnn(cell, word_vectors, dtype=tf.float32)
+        output = tf.reshape(output, [-1, EMBEDDING_SIZE])
+        logits = tf.contrib.layers.fully_connected(output, LABEL_VOCAB_SIZE)
+        logits = tf.reshape(logits, [-1, MAX_DOCUMENT_LEN, LABEL_VOCAB_SIZE], name=TENSOR_NAME_LOGITS)
 
-    def fit(self, steps, batch_size=None, validation_token_path=None, validation_label_path=None):
-        def input_fn():
-            return tf.placeholder_with_default(self.token_ids, name=TENSOR_NAME_TOKENS, shape=[None, self.params[PARAM_KEY_MAX_DOCUMENT_LEN]]), \
-                   tf.placeholder_with_default(self.label_ids, name=TENSOR_NAME_LABELS, shape=[None, self.params[PARAM_KEY_MAX_DOCUMENT_LEN]])
+        zeros_with_shape = tf.zeros_like(y, dtype=tf.int64)
+        weights = tf.to_double(tf.reshape(tf.not_equal(zeros_with_shape, y), [-1]))
 
-        monitors = []
-        if validation_token_path is not None and validation_label_path is not None:
-            tokens = read_csv(validation_token_path)
-            token_ids = self.preprocess_token_transform(tokens)
-    
-            labels = read_csv(validation_label_path)
-            label_ids = self.preprocess_label_transform(labels)
+        target = tf.one_hot(y, LABEL_VOCAB_SIZE, 1, 0)
+        loss = tf.contrib.losses.softmax_cross_entropy(
+                tf.reshape(logits, [-1, LABEL_VOCAB_SIZE]),
+                tf.reshape(target, [-1, LABEL_VOCAB_SIZE]),
+                weights=weights)
+        self.tensor_loss = tf.identity(loss, name=TENSOR_NAME_LOSS)
+        tf.summary.scalar("loss", self.tensor_loss)
+        
+        # Create a training op.
+        self.tensor_optimizer = tf.contrib.layers.optimize_loss(
+            self.tensor_loss,
+            tf.contrib.framework.get_global_step(),
+            optimizer='Adam',
+            learning_rate=0.01)
 
-            validation_monitor = tf.contrib.learn.monitors.ValidationMonitor(
-                    token_ids,
-                    label_ids,
-                    every_n_steps=10)
-            monitors.append(validation_monitor)
+        self.tensor_prediction = tf.argmax(logits, 2, name=TENSOR_NAME_PREDICTION)
 
-        self.model.fit(input_fn=input_fn, steps=steps, batch_size=batch_size, monitors=monitors)
+        self.summ = tf.summary.merge_all()
+        
+    def fit(self, steps, batch_size=256, validation_data_path=None):
+        assert len(self.token_ids) == len(self.label_ids), "invalid training data"
+
+        validation_token_ids = None
+        validation_label_ids = None
+        if validation_data_path is not None:
+            tokens, labels = read_data(validation_data_path)
+            validation_token_ids = self.preprocess_token_transform(tokens)
+            validation_label_ids = self.preprocess_label_transform(labels)
+
+        self.sess = tf.Session()
+        with self.sess as sess:
+            sess.run(tf.global_variables_initializer())
+
+            writer = tf.summary.FileWriter("/tmp/deeptext/models/sequence_labeling/base_model")
+            writer.add_graph(sess.graph)
+
+            for i in xrange(steps):
+                curr_row_ids = np.random.choice(self.token_ids.shape[0], batch_size)
+                curr_token_ids = self.token_ids[curr_row_ids]
+                curr_label_ids = self.label_ids[curr_row_ids]
+
+                sess.run(self.tensor_optimizer, feed_dict={self.tensor_tokens: curr_token_ids, self.tensor_labels: curr_label_ids})
+
+                if (i + 1) % 100 == 0:
+                    c, s = sess.run([self.tensor_loss, self.summ], feed_dict={self.tensor_tokens: curr_token_ids, self.tensor_labels: curr_label_ids})
+                    writer.add_summary(s, i + 1)
+                    logging.info("step: %d, training loss: %.2f", i + 1, c)
+                    
+                    if validation_data_path is not None:
+                        c, s = sess.run([self.tensor_loss, self.summ], feed_dict={self.tensor_tokens: validation_token_ids, self.tensor_labels: validation_label_ids})
+                        writer.add_summary(s, steps + i + 1)
+                        logging.info("step: %d, validation loss: %.2f", i + 1, c)
 
     def frozen_save(self):
         model_dir = self.params[PARAM_KEY_MODEL_DIR]
