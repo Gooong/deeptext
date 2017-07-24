@@ -9,40 +9,37 @@ import tensorflow.contrib.learn as learn
 
 from scipy.stats import entropy
 
+from deeptext.models.base import Base
 from deeptext.utils.graph import freeze_graph, load_graph
 from deeptext.utils.csv import read_csv
 from deeptext.utils.serialization import save, restore
+import deeptext.models.constants as constants 
 
 from utils import read_data
 
-PARAM_KEY_TOKEN_VOCAB_SIZE = "token_vocab_size"
-PARAM_KEY_LABEL_VOCAB_SIZE = "label_vocab_size"
-PARAM_KEY_MAX_DOCUMENT_LEN = "max_document_len"
-PARAM_KEY_EMBEDDING_SIZE = "embedding_size"
-PARAM_KEY_DROPOUT_PROB = "dropout_prob"
-PARAM_KEY_MODEL_DIR = "model_dir"
 
-FILENAME_TOKEN_VOCAB = "token.vocab"
-FILENAME_LABEL_VOCAB = "label.vocab"
-
-TENSOR_NAME_TOKENS      = "deeptext/models/sequence_labeling/tokens"
-TENSOR_NAME_LABELS      = "deeptext/models/sequence_labeling/labels"
-TENSOR_NAME_PREDICTION  = "deeptext/models/sequence_labeling/prediction"
-TENSOR_NAME_LOSS        = "deeptext/models/sequence_labeling/loss"
-TENSOR_NAME_LOGITS      = "deeptext/models/sequence_labeling/logits"
-TENSOR_NAME_DEBUG1      = "deeptext/models/sequence_labeling/debug1"
-TENSOR_NAME_DEBUG2      = "deeptext/models/sequence_labeling/debug2"
-TENSOR_NAME_DEBUG3      = "deeptext/models/sequence_labeling/debug3"
-TENSOR_NAME_DEBUG4      = "deeptext/models/sequence_labeling/debug4"
-TENSOR_NAME_DEBUG5      = "deeptext/models/sequence_labeling/debug5"
-
-class BaseModel(object):
+class SequenceLabeling(Base):
 
     def __init__(self, params):
-        self.params = params
+        super(SequenceLabeling, self).__init__(params)
 
-        tf.logging.set_verbosity(tf.logging.INFO)
+        model_dir = self.params[constants.PARAM_KEY_MODEL_DIR]
 
+        token_vocab_path = os.path.join(model_dir, constants.FILENAME_TOKEN_VOCAB)
+        if os.path.isfile(token_vocab_path):
+            logging.info("loading token vocabulary ...")
+            self.token_vocab = restore(token_vocab_path)
+            logging.info("token vocabulary size = %d", len(self.token_vocab.vocabulary_))
+        else:
+            self.token_vocab = None
+
+        label_vocab_path = os.path.join(model_dir, constants.FILENAME_LABEL_VOCAB)
+        if os.path.isfile(label_vocab_path):
+            logging.info("loading label vocabulary ...")
+            self.label_vocab = restore(label_vocab_path)
+            logging.info("label vocabulary size = %d", len(self.label_vocab.vocabulary_))
+        else:
+            self.label_vocab = None
 
     def preprocess(self, training_data_path):
 
@@ -51,31 +48,38 @@ class BaseModel(object):
                 yield value 
 
         tokens, labels = read_data(training_data_path)
+        model_dir = self.params[constants.PARAM_KEY_MODEL_DIR]
 
-        self.token_vocab = learn.preprocessing.VocabularyProcessor(
-                max_document_length=self.params[PARAM_KEY_MAX_DOCUMENT_LEN],
-                tokenizer_fn=tokenizer)
-        self.token_vocab.fit(tokens)
+        if self.token_vocab is None:
+            logging.info("generating token vocabulary ...")
+            self.token_vocab = learn.preprocessing.VocabularyProcessor(
+                    max_document_length=self.params[constants.PARAM_KEY_MAX_DOCUMENT_LEN],
+                    tokenizer_fn=tokenizer)
+            self.token_vocab.fit(tokens)
+            logging.info("token vocabulary size = %d", len(self.token_vocab.vocabulary_))
+
+            token_vocab_path = os.path.join(model_dir, constants.FILENAME_TOKEN_VOCAB)
+            save(self.token_vocab, token_vocab_path)
+
         self.token_ids = self.preprocess_token_transform(tokens)
-        self.params[PARAM_KEY_TOKEN_VOCAB_SIZE] = len(self.token_vocab.vocabulary_)
+        self.params[constants.PARAM_KEY_TOKEN_VOCAB_SIZE] = len(self.token_vocab.vocabulary_)
 
-        self.label_vocab = learn.preprocessing.VocabularyProcessor(
-                max_document_length=self.params[PARAM_KEY_MAX_DOCUMENT_LEN],
-                tokenizer_fn=tokenizer)
-        self.label_vocab.fit(labels)
+        if self.label_vocab is None:
+            logging.info("generating label vocabulary ...")
+            self.label_vocab = learn.preprocessing.VocabularyProcessor(
+                    max_document_length=self.params[constants.PARAM_KEY_MAX_DOCUMENT_LEN],
+                    tokenizer_fn=tokenizer)
+            self.label_vocab.fit(labels)
+            logging.info("label vocabulary size = %d", len(self.label_vocab.vocabulary_))
+
+            label_vocab_path = os.path.join(model_dir, constants.FILENAME_LABEL_VOCAB)
+            save(self.label_vocab, label_vocab_path)
+
         self.label_ids = self.preprocess_label_transform(labels)
-        self.params[PARAM_KEY_LABEL_VOCAB_SIZE] = len(self.label_vocab.vocabulary_)
+        self.params[constants.PARAM_KEY_LABEL_VOCAB_SIZE] = len(self.label_vocab.vocabulary_)
 
-        model_dir = self.params[PARAM_KEY_MODEL_DIR]
-
-        token_vocab_path = os.path.join(model_dir, FILENAME_TOKEN_VOCAB)
-        save(self.token_vocab, token_vocab_path)
-
-        label_vocab_path = os.path.join(model_dir, FILENAME_LABEL_VOCAB)
-        save(self.label_vocab, label_vocab_path)
-
-        self.tensor_tokens = tf.placeholder_with_default(self.token_ids, name=TENSOR_NAME_TOKENS, shape=[None, self.params[PARAM_KEY_MAX_DOCUMENT_LEN]])
-        self.tensor_labels = tf.placeholder_with_default(self.label_ids, name=TENSOR_NAME_LABELS, shape=[None, self.params[PARAM_KEY_MAX_DOCUMENT_LEN]])
+        self.tensor_tokens = tf.placeholder_with_default(self.token_ids, name=constants.TENSOR_NAME_TOKENS, shape=[None, self.params[constants.PARAM_KEY_MAX_DOCUMENT_LEN]])
+        self.tensor_labels = tf.placeholder_with_default(self.label_ids, name=constants.TENSOR_NAME_LABELS, shape=[None, self.params[constants.PARAM_KEY_MAX_DOCUMENT_LEN]])
 
         self.build_model(self.tensor_tokens, self.tensor_labels)
 
@@ -89,11 +93,11 @@ class BaseModel(object):
 
     def build_model(self, x, y):
 
-        TOKEN_VOCAB_SIZE = self.params[PARAM_KEY_TOKEN_VOCAB_SIZE]
-        LABEL_VOCAB_SIZE = self.params[PARAM_KEY_LABEL_VOCAB_SIZE]
-        MAX_DOCUMENT_LEN = self.params[PARAM_KEY_MAX_DOCUMENT_LEN]
-        EMBEDDING_SIZE = self.params[PARAM_KEY_EMBEDDING_SIZE]
-        DROPOUT_PROB = self.params[PARAM_KEY_DROPOUT_PROB]
+        TOKEN_VOCAB_SIZE = self.params[constants.PARAM_KEY_TOKEN_VOCAB_SIZE]
+        LABEL_VOCAB_SIZE = self.params[constants.PARAM_KEY_LABEL_VOCAB_SIZE]
+        MAX_DOCUMENT_LEN = self.params[constants.PARAM_KEY_MAX_DOCUMENT_LEN]
+        EMBEDDING_SIZE = self.params[constants.PARAM_KEY_EMBEDDING_SIZE]
+        DROPOUT_PROB = self.params[constants.PARAM_KEY_DROPOUT_PROB]
 
         word_vectors = tf.contrib.layers.embed_sequence(
             x, vocab_size=TOKEN_VOCAB_SIZE, embed_dim=EMBEDDING_SIZE, scope='words')
@@ -104,7 +108,7 @@ class BaseModel(object):
         output, _ = tf.nn.dynamic_rnn(cell, word_vectors, dtype=tf.float32)
         output = tf.reshape(output, [-1, EMBEDDING_SIZE])
         logits = tf.contrib.layers.fully_connected(output, LABEL_VOCAB_SIZE)
-        logits = tf.reshape(logits, [-1, MAX_DOCUMENT_LEN, LABEL_VOCAB_SIZE], name=TENSOR_NAME_LOGITS)
+        logits = tf.reshape(logits, [-1, MAX_DOCUMENT_LEN, LABEL_VOCAB_SIZE], name=constants.TENSOR_NAME_LOGITS)
 
         zeros_with_shape = tf.zeros_like(y, dtype=tf.int64)
         weights = tf.to_double(tf.reshape(tf.not_equal(zeros_with_shape, y), [-1]))
@@ -114,7 +118,7 @@ class BaseModel(object):
                 tf.reshape(logits, [-1, LABEL_VOCAB_SIZE]),
                 tf.reshape(target, [-1, LABEL_VOCAB_SIZE]),
                 weights=weights)
-        self.tensor_loss = tf.identity(loss, name=TENSOR_NAME_LOSS)
+        self.tensor_loss = tf.identity(loss, name=constants.TENSOR_NAME_LOSS)
         self.summ_training_loss = tf.summary.scalar("training_loss", self.tensor_loss)
         self.summ_validation_loss = tf.summary.scalar("validation_loss", self.tensor_loss)
         
@@ -125,12 +129,13 @@ class BaseModel(object):
             optimizer='Adam',
             learning_rate=0.01)
 
-        self.tensor_prediction = tf.argmax(logits, 2, name=TENSOR_NAME_PREDICTION)
+        self.tensor_prediction = tf.argmax(logits, 2, name=constants.TENSOR_NAME_PREDICTION)
 
         self.summ = tf.summary.merge_all()
         
-    def fit(self, steps, batch_size=256, validation_data_path=None):
-        assert len(self.token_ids) == len(self.label_ids), "invalid training data"
+    def fit(self, steps, batch_size, training_data_path, validation_data_path=None):
+
+        self.preprocess(training_data_path)
 
         validation_token_ids = None
         validation_label_ids = None
@@ -139,9 +144,9 @@ class BaseModel(object):
             validation_token_ids = self.preprocess_token_transform(tokens)
             validation_label_ids = self.preprocess_label_transform(labels)
 
-        self.sess = tf.Session()
-        with self.sess as sess:
+        with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
+            self.restore(sess)
 
             writer = tf.summary.FileWriter("/tmp/deeptext/models/sequence_labeling/base_model")
             writer.add_graph(sess.graph)
@@ -163,9 +168,7 @@ class BaseModel(object):
                         writer.add_summary(s, i + 1)
                         logging.info("step: %d, validation loss: %.2f", i + 1, c)
 
-    def frozen_save(self):
-        model_dir = self.params[PARAM_KEY_MODEL_DIR]
-        freeze_graph(model_dir, [TENSOR_NAME_PREDICTION, TENSOR_NAME_LOSS, TENSOR_NAME_LOGITS])
+                    self.save(sess)
 
     def predict(self, tokens):
         tokens_transform = self.preprocess_token_transform(tokens)
@@ -215,29 +218,3 @@ class BaseModel(object):
 
         logging.info("total label count: %d, label accuracy: %.2f", label_total_cnt, 1.0 * label_corre_cnt / label_total_cnt)
         logging.info("total sentence count: %d, sentence accuracy: %.2f", sentence_total_cnt, 1.0 * sentence_corre_cnt / sentence_total_cnt)
-
-    @classmethod
-    def restore(cls, model_dir):
-
-        params = {}
-        params[PARAM_KEY_MODEL_DIR] = model_dir
-
-        model = cls(params)
-
-        model.token_vocab_path = os.path.join(model_dir, FILENAME_TOKEN_VOCAB)
-        assert os.path.exists(model.token_vocab_path), "missing " + FILENAME_TOKEN_VOCAB
-        model.token_vocab = restore(model.token_vocab_path)
-
-        model.label_vocab_path = os.path.join(model_dir, FILENAME_LABEL_VOCAB)
-        assert os.path.exists(model.label_vocab_path), "missing " + FILENAME_LABEL_VOCAB
-        model.label_vocab = restore(model.label_vocab_path)
-
-        model.frozen_graph = load_graph(model_dir)
-        model.tokens_tensor = model.frozen_graph.get_tensor_by_name('prefix/' + TENSOR_NAME_TOKENS + ':0')
-        model.labels_tensor = model.frozen_graph.get_tensor_by_name('prefix/' + TENSOR_NAME_LABELS + ':0')
-        model.prediction_tensor = model.frozen_graph.get_tensor_by_name('prefix/' + TENSOR_NAME_PREDICTION + ':0')
-        model.logits_tensor = model.frozen_graph.get_tensor_by_name('prefix/' + TENSOR_NAME_LOGITS + ':0')
-        model.loss_tensor = model.frozen_graph.get_tensor_by_name('prefix/' + TENSOR_NAME_LOSS + ':0')
-        model.sess = tf.Session(graph=model.frozen_graph)
-
-        return model
