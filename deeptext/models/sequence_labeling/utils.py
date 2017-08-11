@@ -1,10 +1,5 @@
-import os
-
-import tensorflow as tf
-
-from tensorflow.python.framework import graph_util
-
 from deeptext.utils.csv import read_csv
+
 
 def read_data(data_path):
     rows = read_csv(data_path)

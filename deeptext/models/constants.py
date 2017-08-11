@@ -21,3 +21,5 @@ FILENAME_LABEL_VOCAB = "label.vocab"
 TENSOR_NAME_TOKENS      = "deeptext/models/sequence_labeling/tokens"
 TENSOR_NAME_LABELS      = "deeptext/models/sequence_labeling/labels"
 TENSOR_NAME_LOGITS      = "deeptext/models/sequence_labeling/logits"
+
+SUMMARY_FILE_PATH = "/tmp/deeptext/models/sequence_labeling/base_model"

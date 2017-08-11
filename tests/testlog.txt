@@ -1,0 +1,11 @@
+params["max_document_len"] = 25
+params["embedding_size"] = 50
+params["dropout_prob"] = 0.5
+learning_rate = 0.1
+[2017-08-10 15:00:15,400] total label count: 257186, label accuracy: 0.98
+[2017-08-10 15:00:15,400] total sentence count: 30000, sentence accuracy: 0.93
+[[u'B-MusicGroup', u'I-MusicGroup', u'E-MusicGroup', u'O', u'B-MusicRecording', u'O', u'I-MusicRecording', u'I-MusicRecording', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O']]
+[[u'B-MusicRecording', u'I-MusicGroup', u'I-MusicRecording', u'I-MusicGroup', u'I-MusicGroup', u'E-MusicGroup', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O']]
+[[u'O', u'O', u'B-MusicRecording', u'E-MusicRecording', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O']]
+[[u'O', u'O', u'B-MusicGroup', u'I-MusicGroup', u'E-MusicGroup', u'O', u'B-MusicRecording', u'E-MusicRecording', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O']]
+[[u'B-MusicRecording', u'O', u'B-MusicRecording', u'E-MusicRecording', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O', u'O']]

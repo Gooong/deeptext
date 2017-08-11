@@ -46,7 +46,7 @@ class Base(object):
         if not os.path.isfile(filepath_meta):
             return False
 
-#        saver = tf.train.import_meta_graph(filepath_meta)
+        #  saver = tf.train.import_meta_graph(filepath_meta)
         saver = tf.train.Saver()
         saver.restore(sess, filepath)
         return True
