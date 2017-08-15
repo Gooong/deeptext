@@ -1,2 +1,0 @@
-model_checkpoint_path: "ner_music"
-all_model_checkpoint_paths: "ner_music"
